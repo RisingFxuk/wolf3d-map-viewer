@@ -1,0 +1,866 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="preconnect" href="https://static.wikia.nocookie.net">
+<link rel="preconnect" href="https://wolfenstein.fandom.com">
+<title>Wolfenstein 3D Map Viewer</title>
+<style>
+:root {
+    --bg-color: #121212; --container-bg: #1e1e1e; --text-color: #e0e0e0;
+    --accent-color: #ff4500; --accent-hover: #ff6347;
+    --warning-bg: #2d1616; --warning-border: #8b0000;
+}
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background-color: var(--bg-color); color: var(--text-color);
+    margin: 0; padding: 20px; display: flex; flex-direction: column;
+    align-items: center; min-height: 100vh; box-sizing: border-box;
+}
+h1 { margin-top: 0; color: #fff; text-shadow: 2px 2px 4px rgba(0,0,0,0.6); }
+.container {
+    background-color: var(--container-bg); padding: 20px; border-radius: 8px;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.5); max-width: 600px; width: 100%;
+    text-align: center; box-sizing: border-box; margin-bottom: 20px;
+}
+.controls { display: flex; justify-content: center; align-items: center; gap: 10px; margin-bottom: 15px; flex-wrap: wrap; }
+button {
+    background-color: var(--accent-color); color: white; border: none; padding: 10px 15px;
+    font-size: 16px; font-weight: bold; border-radius: 4px; cursor: pointer; transition: background-color 0.2s;
+}
+button:hover { background-color: var(--accent-hover); }
+select { background-color: #333; color: white; border: 1px solid #555; padding: 10px; font-size: 16px; border-radius: 4px; cursor: pointer; max-width: 100%; }
+.links-container { margin: 15px 0; display: flex; justify-content: center; gap: 20px; flex-wrap: wrap; }
+a.wiki-link, .quick-links a { color: #00bfff; text-decoration: none; font-weight: bold; font-size: 15px; }
+a.wiki-link:hover, .quick-links a:hover { color: #1e90ff; text-decoration: underline; }
+.map-preview-container { margin-top: 15px; border: 2px solid #333; background-color: #000; padding: 10px; border-radius: 4px; cursor: pointer; display: inline-block; }
+.map-preview { max-width: 100%; height: auto; display: block; image-rendering: pixelated; image-rendering: crisp-edges; }
+.hint { font-size: 12px; color: #888; margin-top: 5px; }
+
+.strategy-box { display: none; background-color: var(--warning-bg); border: 2px solid var(--warning-border); padding: 15px; border-radius: 6px; margin-top: 15px; text-align: left; box-sizing: border-box; }
+.strategy-box h3 { margin-top: 0; color: #ff6347; }
+
+/* Wiki stats panel */
+.wiki-info { margin-top: 15px; text-align: left; font-size: 14px; line-height: 1.5; }
+.wiki-info table { border-collapse: collapse; width: 100%; margin-bottom: 10px; }
+.wiki-info th, .wiki-info td { border: 1px solid #333; padding: 4px 8px; text-align: left; }
+.wiki-info th { background-color: #2a2a2a; }
+.wiki-info td td, .wiki-info td th { font-size: 13px; }
+.wiki-info h3 { color: #ff6347; margin: 15px 0 5px 0; }
+.wiki-info h4 { color: #ffa07a; margin: 10px 0 5px 0; }
+.wiki-info ol, .wiki-info ul { padding-left: 25px; }
+.wiki-info p { margin: 8px 0; }
+.wiki-info a { color: #00bfff; }
+
+/* Quick links at the bottom */
+.quick-links { text-align: left; font-size: 14px; }
+.quick-links h2 { margin-top: 0; font-size: 18px; text-align: center; }
+.quick-row { margin-bottom: 8px; line-height: 1.6; }
+.quick-row .episode-label { display: inline-block; min-width: 100px; color: #aaa; font-weight: bold; }
+
+.lightbox-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.9); z-index: 9999; justify-content: center; align-items: center; overflow: auto; cursor: zoom-out; }
+.lightbox-content { image-rendering: pixelated; image-rendering: crisp-edges; max-width: 95%; max-height: 95%; transform: scale(2); transform-origin: center; box-shadow: 0 0 20px rgba(255,255,255,0.1); }
+@media (max-width: 800px), (max-height: 800px) { .lightbox-content { transform: scale(1.5); } }
+</style>
+</head>
+<body>
+
+<h1>Wolfenstein 3D Map Viewer</h1>
+
+<div class="container">
+    <div class="controls">
+        <button id="prevBtn" title="Keyboard Shortcut: Left Arrow">◀ Back</button>
+        <select id="levelSelect"></select>
+        <button id="nextBtn" title="Keyboard Shortcut: Right Arrow">Forward ▶</button>
+    </div>
+
+    <div class="links-container">
+        <a id="wikiHyperlink" class="wiki-link" target="_blank" href="#">🌐 View Wiki Article</a>
+        <a id="steamHyperlink" class="wiki-link" target="_blank" href="#">🗺️ Steam Secret Map Guide</a>
+    </div>
+
+    <div class="map-preview-container" id="previewContainer" title="Click to zoom (Shortcut: Space or Enter)">
+        <img id="mapImg" class="map-preview" src="" alt="Select a level to view map" fetchpriority="high">
+        <div class="hint">Click map image to expand cleanly without cutoff</div>
+    </div>
+    <div class="hint" id="mapMessage"></div>
+
+    <!-- Hand-written strategy note for E4M02 -->
+    <div id="strategyBox" class="strategy-box">
+        <h3>⚠️ CRITICAL LEVEL STRATEGY WARNING</h3>
+        <p><strong>On Floor 4 Map 2:</strong> You <em>HAVE TO LOOK AT THE MAP CAREFULLY</em>. If you don't and you just go pushing walls, the secret walls jam the OTHER secret walls and you are completely screwed...</p>
+        <p>In the red brick room - <strong>YOU HAVE TO DO IT IN THIS ORDER BELOW:</strong></p>
+        <p style="color: #ffd700; font-weight: bold; background: #400; padding: 8px; border-radius: 4px; text-align: center;">
+            Middle ➔ Upper Left ➔ Middle ➔ Lower Right ➔ Upper Left ➔ Push first wall into slot ➔ Lower Right
+        </p>
+        <p>This will get you to the door where the treasure, lives, and gun is at. Once you do this - go BACK and push some of those remaining walls around (but once you do it will <strong>BLOCK THE DOOR</strong> so make sure you get everything in that secret area <strong>FIRST</strong>).</p>
+        <hr style="border-color: var(--warning-border);">
+        <p><strong>Okay now for the bottom of the red brick room:</strong> If you do it wrong you won't get completion. To do this room you need to go all the way back to the beginning and enter the red bricks from that area. Push the first secret wall <strong>AND STOP - DO NOT PUSH ANYTHING ELSE</strong>.</p>
+        <p>Now go all the way back to the upper red brick room where you got to the treasure room and push the last secret wall.</p>
+    </div>
+
+    <!-- Filled in from the wiki every time the level changes -->
+    <div id="wikiInfo" class="wiki-info"></div>
+</div>
+
+<div class="container quick-links">
+    <h2>Wolfenstein 3D levels</h2>
+    <div id="quickLinks"></div>
+</div>
+
+<div id="lightbox" class="lightbox-overlay">
+    <img id="lightboxImg" class="lightbox-content" src="" alt="Enlarged Map View">
+</div>
+
+<script>
+// ---------------------------------------------------------------
+// SETTINGS
+// ---------------------------------------------------------------
+var WIKI_IMAGE_BASE = "https://static.wikia.nocookie.net/wolfenstein/images/";
+var WIKI_SITE = "https://wolfenstein.fandom.com";
+var WIKI_PAGE_BASE = "https://wolfenstein.fandom.com/wiki/";
+var WIKI_API = "https://wolfenstein.fandom.com/api.php";
+var STEAM_GUIDE_URL = "https://steamcommunity.com/sharedfiles/filedetails/?id=1325446230";
+var STEAM_HASH_PREFIX = "#";   // Steam guides jump to a section when the section ID follows the #
+
+// Image folder for each map. The image address is:
+// WIKI_IMAGE_BASE + folder + "/WOLF3D_" + code + ".PNG"
+// (the folder is worked out from the MD5 hash of the file name)
+var mapPaths = {
+    "E1M01": "d/d9",
+    "E1M02": "e/ea",
+    "E1M03": "e/eb",
+    "E1M04": "8/87",
+    "E1M05": "f/f9",
+    "E1M06": "7/7c",
+    "E1M07": "6/64",
+    "E1M08": "3/3e",
+    "E1M09": "f/f6",
+    "E1M10": "3/32",
+    "E2M01": "a/ad",
+    "E2M02": "2/20",
+    "E2M03": "d/d4",
+    "E2M04": "3/3a",
+    "E2M05": "d/d4",
+    "E2M06": "0/0c",
+    "E2M07": "5/57",
+    "E2M08": "b/b1",
+    "E2M09": "8/8c",
+    "E2M10": "c/c8",
+    "E3M01": "1/13",
+    "E3M02": "4/44",
+    "E3M03": "4/48",
+    "E3M04": "f/f4",
+    "E3M05": "2/2a",
+    "E3M06": "3/39",
+    "E3M07": "f/ff",
+    "E3M08": "d/df",
+    "E3M09": "a/a9",
+    "E3M10": "9/96",
+    "E4M01": "c/ca",
+    "E4M02": "d/d9",
+    "E4M03": "8/8f",
+    "E4M04": "5/58",
+    "E4M05": "e/e4",
+    "E4M06": "5/56",
+    "E4M07": "9/90",
+    "E4M08": "4/4e",
+    "E4M09": "1/13",
+    "E4M10": "1/1a",
+    "E5M01": "6/61",
+    "E5M02": "7/70",
+    "E5M03": "4/41",
+    "E5M04": "d/db",
+    "E5M05": "7/7b",
+    "E5M06": "d/d5",
+    "E5M07": "8/83",
+    "E5M08": "6/64",
+    "E5M09": "6/6e",
+    "E5M10": "9/9d",
+    "E6M01": "3/3e",
+    "E6M02": "2/21",
+    "E6M03": "7/7d",
+    "E6M04": "0/04",
+    "E6M05": "3/3b",
+    "E6M06": "7/7a",
+    "E6M07": "4/46",
+    "E6M08": "0/0c",
+    "E6M09": "7/71",
+    "E6M10": "e/e4",
+};
+
+// Steam guide section IDs. Fill these in using the console snippet.
+var steamSectionIds = {
+    "E1M02": "2388076",
+    "E1M03": "2388866",
+    "E1M04": "2388868",
+    "E1M05": "2388869",
+    "E2M10": "2389101",
+    "E3M04": "2389127"
+};
+
+// ---------------------------------------------------------------
+// VARIABLES
+// ---------------------------------------------------------------
+var levels = [];
+var episodeNames = ["One", "Two", "Three", "Four", "Five", "Six"];
+var wikiCache = {};        // remembers wiki results so each level is only fetched once
+var currentCode = "";      // the level currently on screen
+var currentIndex = 0;      // its position in the levels list
+var preloadedImages = {};  // keeps preloaded maps in memory so the browser reuses them
+var jsonpCounter = 0;      // gives each JSONP request its own function name
+
+var select = document.getElementById("levelSelect");
+var mapImg = document.getElementById("mapImg");
+var mapMessage = document.getElementById("mapMessage");
+var wikiHyperlink = document.getElementById("wikiHyperlink");
+var steamHyperlink = document.getElementById("steamHyperlink");
+var strategyBox = document.getElementById("strategyBox");
+var wikiInfo = document.getElementById("wikiInfo");
+var quickLinks = document.getElementById("quickLinks");
+var lightbox = document.getElementById("lightbox");
+var lightboxImg = document.getElementById("lightboxImg");
+var previewContainer = document.getElementById("previewContainer");
+var prevBtn = document.getElementById("prevBtn");
+var nextBtn = document.getElementById("nextBtn");
+
+// ---------------------------------------------------------------
+// BUILDING THE LEVEL LIST, DROPDOWN AND QUICK LINKS
+// ---------------------------------------------------------------
+function buildLevels() {
+    let ep;
+    let fl;
+    let floorText;
+    let code;
+    let name;
+
+    for (ep = 1; ep <= 6; ep = ep + 1) {
+        for (fl = 1; fl <= 10; fl = fl + 1) {
+            if (fl < 10) {
+                floorText = "0" + fl;
+            } else {
+                floorText = "10";
+            }
+            code = "E" + ep + "M" + floorText;
+            name = "Episode " + episodeNames[ep - 1] + " - Floor " + fl;
+            if (fl === 9) {
+                name = name + " (Boss)";
+            }
+            if (fl === 10) {
+                name = name + " (Secret)";
+            }
+            levels.push({
+                code: code,
+                name: name,
+                floor: fl,
+                wikiPage: "Episode_" + ep + "/Floor_" + fl
+            });
+        }
+    }
+}
+
+function buildDropdown() {
+    let i;
+    let option;
+
+    for (i = 0; i < levels.length; i = i + 1) {
+        option = document.createElement("option");
+        option.value = i;
+        option.textContent = levels[i].name;
+        select.appendChild(option);
+    }
+}
+
+function makeLinkHandler(index) {
+    return function (event) {
+        event.preventDefault();
+        select.value = index;
+        updateDisplay();
+        window.scrollTo(0, 0);
+    };
+}
+
+function buildQuickLinks() {
+    let ep;
+    let fl;
+    let row;
+    let label;
+    let link;
+    let separator;
+    let index;
+    let linkText;
+
+    for (ep = 1; ep <= 6; ep = ep + 1) {
+        row = document.createElement("div");
+        row.className = "quick-row";
+
+        label = document.createElement("span");
+        label.className = "episode-label";
+        label.textContent = "Episode " + episodeNames[ep - 1];
+        row.appendChild(label);
+
+        for (fl = 1; fl <= 10; fl = fl + 1) {
+            index = (ep - 1) * 10 + (fl - 1);
+            linkText = "Floor " + fl;
+            if (fl === 9) {
+                linkText = linkText + " (Boss)";
+            }
+            if (fl === 10) {
+                linkText = linkText + " (Secret)";
+            }
+
+            link = document.createElement("a");
+            link.href = "#";
+            link.textContent = linkText;
+            link.onclick = makeLinkHandler(index);
+            row.appendChild(link);
+
+            if (fl < 10) {
+                separator = document.createElement("span");
+                separator.textContent = " · ";
+                row.appendChild(separator);
+            }
+        }
+        quickLinks.appendChild(row);
+    }
+}
+
+// ---------------------------------------------------------------
+// SHOWING A LEVEL
+// ---------------------------------------------------------------
+function getMapImageUrl(code) {
+    let folder;
+    let url;
+
+    folder = mapPaths[code];
+    if (folder === undefined) {
+        url = "";
+    } else {
+        url = WIKI_IMAGE_BASE + folder + "/WOLF3D_" + code + ".PNG";
+    }
+    return url;
+}
+
+function updateDisplay() {
+    let index;
+    let level;
+    let imageUrl;
+    let steamId;
+
+    index = parseInt(select.value, 10);
+    level = levels[index];
+    currentCode = level.code;
+    currentIndex = index;
+
+    // Links
+    wikiHyperlink.href = WIKI_PAGE_BASE + level.wikiPage;
+    steamId = steamSectionIds[level.code];
+    if (steamId) {
+        steamHyperlink.href = STEAM_GUIDE_URL + STEAM_HASH_PREFIX + steamId;
+    } else {
+        steamHyperlink.href = STEAM_GUIDE_URL;
+    }
+
+    // Map image
+    mapMessage.textContent = "";
+    imageUrl = getMapImageUrl(level.code);
+    if (imageUrl !== "") {
+        mapMessage.textContent = "Loading map...";
+        mapImg.src = imageUrl;
+        mapImg.alt = level.name + " Map Layout";
+    } else {
+        mapImg.src = "data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='400' height='400'%3E%3Crect width='400' height='400' fill='%23222'/%3E%3Ctext x='50%25' y='50%25' text-anchor='middle' fill='%23777' font-family='sans-serif' font-size='16'%3EMap missing%3C/text%3E%3C/svg%3E";
+        mapImg.alt = "No map for this level";
+    }
+
+    // Hand-written E4M02 warning
+    if (level.code === "E4M02") {
+        strategyBox.style.display = "block";
+    } else {
+        strategyBox.style.display = "none";
+    }
+
+    loadWikiInfo(level);
+}
+
+mapImg.onerror = function () {
+    mapMessage.textContent = "Image not found: " + mapImg.src;
+};
+
+// When the current map has finished loading, quietly load the nearby ones
+// so the next click is instant.
+mapImg.onload = function () {
+    mapMessage.textContent = "";
+    preloadNearbyMaps(currentIndex);
+};
+
+function preloadMap(index) {
+    let level;
+    let url;
+    let image;
+
+    if (index >= 0 && index < levels.length) {
+        level = levels[index];
+        url = getMapImageUrl(level.code);
+        if (url !== "" && preloadedImages[level.code] === undefined) {
+            image = new Image();
+            image.src = url;
+            preloadedImages[level.code] = image;
+        }
+    }
+}
+
+function preloadNearbyMaps(index) {
+    preloadMap(index + 1);
+    preloadMap(index + 2);
+    preloadMap(index - 1);
+}
+
+// ---------------------------------------------------------------
+// WIKI STATS (fetched live from the Fandom API)
+// ---------------------------------------------------------------
+function escapeHtml(text) {
+    text = text.replace(/&/g, "&amp;");
+    text = text.replace(/</g, "&lt;");
+    text = text.replace(/>/g, "&gt;");
+    return text;
+}
+
+// Removes scripts, images, links and ALL attributes (except colspan/rowspan)
+// so the wiki content is safe to put into this page.
+// If keepWikiLinks is true, links to other wiki pages are kept (see buildIntroHtml).
+function stripAttributes(node) {
+    let j;
+    let attributeName;
+    let keep;
+
+    for (j = node.attributes.length - 1; j >= 0; j = j - 1) {
+        attributeName = node.attributes[j].name;
+        keep = false;
+        if (attributeName === "colspan" || attributeName === "rowspan") {
+            keep = true;
+        }
+        // any link still left at this point was approved in cleanElement
+        if (node.tagName === "A" && (attributeName === "href" || attributeName === "target" || attributeName === "rel")) {
+            keep = true;
+        }
+        if (keep === false) {
+            node.removeAttribute(attributeName);
+        }
+    }
+}
+
+function cleanElement(element, keepWikiLinks) {
+    let unwanted;
+    let links;
+    let all;
+    let href;
+    let i;
+
+    unwanted = element.querySelectorAll("script, style, img, figure, iframe, sup, .mw-editsection, .noprint");
+    for (i = 0; i < unwanted.length; i = i + 1) {
+        if (unwanted[i].parentNode) {
+            unwanted[i].parentNode.removeChild(unwanted[i]);
+        }
+    }
+
+    links = element.querySelectorAll("a");
+    for (i = 0; i < links.length; i = i + 1) {
+        href = links[i].getAttribute("href");
+        if (keepWikiLinks && href && href.indexOf("/wiki/") === 0) {
+            // keep this link, as a full address that opens in a new tab
+            links[i].setAttribute("href", WIKI_SITE + href);
+            links[i].setAttribute("target", "_blank");
+            links[i].setAttribute("rel", "noopener");
+        } else if (links[i].parentNode) {
+            links[i].parentNode.replaceChild(document.createTextNode(links[i].textContent), links[i]);
+        }
+    }
+
+    stripAttributes(element);
+    all = element.querySelectorAll("*");
+    for (i = 0; i < all.length; i = i + 1) {
+        stripAttributes(all[i]);
+    }
+    return element;
+}
+
+// The wiki's info box is a table with the class "infobox"
+// (Secrets, Treasure, Enemies, Highscore). We copy it and clean it.
+function buildInfoboxHtml(doc) {
+    let infobox;
+    let clone;
+    let headerCells;
+    let image;
+    let link;
+    let label;
+    let html;
+    let i;
+
+    html = "";
+    infobox = doc.querySelector("table.infobox");
+
+    if (infobox) {
+        clone = infobox.cloneNode(true);
+
+        // Some labels are only a small icon. Use the icon's name as the label instead.
+        headerCells = clone.querySelectorAll("th");
+        for (i = 0; i < headerCells.length; i = i + 1) {
+            if (headerCells[i].textContent.trim() === "") {
+                label = "";
+                image = headerCells[i].querySelector("img");
+                link = headerCells[i].querySelector("a");
+                if (image && image.getAttribute("alt")) {
+                    label = image.getAttribute("alt");
+                    label = label.replace(/\.(png|gif|jpg|jpeg|svg)$/i, "");
+                } else if (link && link.getAttribute("title")) {
+                    label = link.getAttribute("title");
+                }
+                headerCells[i].textContent = label;
+            }
+        }
+
+        cleanElement(clone);
+        html = clone.outerHTML;
+    }
+    return html;
+}
+
+// The first paragraph of the wiki page describes the level.
+// It always sits above the first heading, so we take the first paragraph
+// with text in it before that point (ignoring the stats table and contents box).
+function buildIntroHtml(doc) {
+    let root;
+    let headings;
+    let firstHeading;
+    let paragraphs;
+    let paragraph;
+    let clone;
+    let searching;
+    let pastHeading;
+    let html;
+    let i;
+
+    root = doc.querySelector(".mw-parser-output");
+    if (!root) {
+        root = doc.body;
+    }
+
+    // Find the first real heading (the "Contents" box has a heading too, so skip that)
+    firstHeading = null;
+    headings = root.querySelectorAll("h2, h3");
+    i = 0;
+    while (firstHeading === null && i < headings.length) {
+        if (!headings[i].closest(".toc, #toc")) {
+            firstHeading = headings[i];
+        }
+        i = i + 1;
+    }
+
+    // Look through the paragraphs until we find one that is usable
+    html = "";
+    searching = true;
+    paragraphs = root.querySelectorAll("p");
+    i = 0;
+    while (searching === true && i < paragraphs.length) {
+        paragraph = paragraphs[i];
+
+        pastHeading = false;
+        if (firstHeading !== null) {
+            if (firstHeading.compareDocumentPosition(paragraph) & Node.DOCUMENT_POSITION_FOLLOWING) {
+                pastHeading = true;
+            }
+        }
+
+        if (pastHeading === true) {
+            // we have gone below the first heading, so there is no intro paragraph
+            searching = false;
+        } else if (!paragraph.closest("table, aside, .toc, #toc") && paragraph.textContent.trim() !== "") {
+            clone = paragraph.cloneNode(true);
+            cleanElement(clone, true);
+            html = clone.outerHTML;
+            searching = false;
+        }
+        i = i + 1;
+    }
+    return html;
+}
+
+function getHeadingLevel(node) {
+    let inner;
+    let level;
+
+    level = 0;
+    if (/^H[1-6]$/.test(node.tagName)) {
+        level = parseInt(node.tagName.charAt(1), 10);
+    } else if (node.classList.contains("mw-heading")) {
+        inner = node.querySelector("h1, h2, h3, h4, h5, h6");
+        if (inner) {
+            level = parseInt(inner.tagName.charAt(1), 10);
+        }
+    }
+    return level;
+}
+
+// Finds a heading whose text matches the pattern (e.g. Strategy, Secrets)
+// and collects everything underneath it until the next heading of the same size.
+function buildSectionHtml(doc, pattern) {
+    let root;
+    let headings;
+    let i;
+    let found;
+    let headingClone;
+    let headingText;
+    let startBlock;
+    let startLevel;
+    let node;
+    let nodeLevel;
+    let reachedNextSection;
+    let clone;
+    let html;
+
+    html = "";
+
+    root = doc.querySelector(".mw-parser-output");
+    if (!root) {
+        root = doc.body;
+    }
+
+    // Look for the heading, and stop as soon as it is found
+    headings = root.querySelectorAll("h2, h3");
+    found = null;
+    headingText = "";
+    i = 0;
+    while (found === null && i < headings.length) {
+        headingClone = headings[i].cloneNode(true);
+        cleanElement(headingClone);
+        headingText = headingClone.textContent.trim();
+        if (pattern.test(headingText)) {
+            found = headings[i];
+        }
+        i = i + 1;
+    }
+
+    if (found !== null) {
+        startBlock = found;
+        if (found.parentNode.classList && found.parentNode.classList.contains("mw-heading")) {
+            startBlock = found.parentNode;
+        }
+        startLevel = parseInt(found.tagName.charAt(1), 10);
+
+        html = "<h3>" + escapeHtml(headingText) + "</h3>";
+        node = startBlock.nextElementSibling;
+        reachedNextSection = false;
+        while (node && reachedNextSection === false) {
+            nodeLevel = getHeadingLevel(node);
+            if (nodeLevel > 0 && nodeLevel <= startLevel) {
+                reachedNextSection = true;
+            } else {
+                clone = node.cloneNode(true);
+                cleanElement(clone);
+                html = html + clone.outerHTML;
+                node = node.nextElementSibling;
+            }
+        }
+    }
+    return html;
+}
+
+function showWikiHtml(code, html) {
+    // Ignore the result if the person has already moved to another level
+    if (code === currentCode) {
+        wikiInfo.innerHTML = html;
+    }
+}
+
+function handleWikiData(code, data) {
+    let doc;
+    let html;
+
+    try {
+        if (!data.parse || !data.parse.text) {
+            showWikiHtml(code, "<p class='hint'>No wiki page found for this level.</p>");
+        } else {
+            doc = new DOMParser().parseFromString(data.parse.text["*"], "text/html");
+            html = buildIntroHtml(doc);
+            html = html + buildInfoboxHtml(doc);
+            html = html + buildSectionHtml(doc, /strateg/i);
+            html = html + buildSectionHtml(doc, /^secrets?/i);
+
+            if (html === "") {
+                html = "<p class='hint'>Couldn't find stats on the wiki page. Use the wiki link above.</p>";
+            }
+            wikiCache[code] = html;
+            showWikiHtml(code, html);
+        }
+    } catch (error) {
+        console.log("Could not read the wiki page:", error);
+        showWikiHtml(code, "<p class='hint'>Couldn't read the wiki page (" + escapeHtml(String(error)) + ").</p>");
+    }
+}
+
+// Backup method. A normal fetch() can be refused by the browser's cross-site rules.
+// A <script> tag is allowed to load from another site, and the wiki's API can
+// answer in a form ("JSONP") that calls one of our functions with the data.
+function requestWikiDataJsonp(url, onSuccess, onFailure) {
+    let callbackName;
+    let script;
+    let timer;
+    let finished;
+
+    jsonpCounter = jsonpCounter + 1;
+    callbackName = "wikiJsonpCallback" + jsonpCounter;
+    finished = false;
+    script = document.createElement("script");
+
+    function finish() {
+        finished = true;
+        clearTimeout(timer);
+        if (script.parentNode) {
+            script.parentNode.removeChild(script);
+        }
+        window[callbackName] = function () {};
+    }
+
+    window[callbackName] = function (data) {
+        if (finished === false) {
+            finish();
+            onSuccess(data);
+        }
+    };
+
+    script.onerror = function () {
+        if (finished === false) {
+            finish();
+            onFailure();
+        }
+    };
+
+    timer = setTimeout(function () {
+        if (finished === false) {
+            finish();
+            onFailure();
+        }
+    }, 15000);
+
+    script.src = url + "&callback=" + callbackName;
+    document.head.appendChild(script);
+}
+
+function loadWikiInfo(level) {
+    let params;
+    let code;
+    let failMessage;
+
+    code = level.code;
+
+    if (wikiCache[code] !== undefined) {
+        wikiInfo.innerHTML = wikiCache[code];
+    } else {
+        wikiInfo.innerHTML = "<p class='hint'>Loading wiki stats...</p>";
+        failMessage = "<p class='hint'>Couldn't load wiki stats. Check your connection or ad blocker, or use the wiki link above.</p>";
+        params = "?action=parse&prop=text&redirects=1&format=json&page=" + encodeURIComponent(level.wikiPage);
+
+        // First try a normal fetch. If that fails, try the script-tag method.
+        fetch(WIKI_API + params + "&origin=*")
+            .then(function (response) {
+                return response.json();
+            })
+            .then(
+                function (data) {
+                    handleWikiData(code, data);
+                },
+                function (error) {
+                    console.log("fetch failed, trying JSONP instead:", error);
+                    requestWikiDataJsonp(
+                        WIKI_API + params,
+                        function (data) {
+                            handleWikiData(code, data);
+                        },
+                        function () {
+                            console.log("JSONP failed too");
+                            showWikiHtml(code, failMessage);
+                        }
+                    );
+                }
+            );
+    }
+}
+
+// ---------------------------------------------------------------
+// NAVIGATION, ZOOM AND KEYBOARD
+// ---------------------------------------------------------------
+function prevLevel() {
+    let index;
+    index = parseInt(select.value, 10) - 1;
+    if (index < 0) {
+        index = levels.length - 1;
+    }
+    select.value = index;
+    updateDisplay();
+}
+
+function nextLevel() {
+    let index;
+    index = parseInt(select.value, 10) + 1;
+    if (index >= levels.length) {
+        index = 0;
+    }
+    select.value = index;
+    updateDisplay();
+}
+
+function openZoom() {
+    if (mapImg.src.indexOf("data:") !== 0) {
+        lightboxImg.src = mapImg.src;
+        lightbox.style.display = "flex";
+    }
+}
+
+function closeZoom() {
+    lightbox.style.display = "none";
+}
+
+function handleKey(e) {
+    let active;
+    active = document.activeElement;
+
+    if (lightbox.style.display === "flex") {
+        if (e.key === "Escape" || e.key === " " || e.key === "Enter") {
+            closeZoom();
+            e.preventDefault();
+        }
+    } else {
+        if (e.key === "ArrowLeft") {
+            prevLevel();
+            e.preventDefault();
+        } else if (e.key === "ArrowRight") {
+            nextLevel();
+            e.preventDefault();
+        } else if (e.key === " " || e.key === "Enter") {
+            if (active !== select && active !== prevBtn && active !== nextBtn) {
+                openZoom();
+                e.preventDefault();
+            }
+        }
+    }
+}
+
+prevBtn.addEventListener("click", prevLevel);
+nextBtn.addEventListener("click", nextLevel);
+select.addEventListener("change", updateDisplay);
+previewContainer.addEventListener("click", openZoom);
+lightbox.addEventListener("click", closeZoom);
+window.addEventListener("keydown", handleKey);
+
+// ---------------------------------------------------------------
+// START
+// ---------------------------------------------------------------
+buildLevels();
+buildDropdown();
+buildQuickLinks();
+updateDisplay();
+</script>
+</body>
+</html>
