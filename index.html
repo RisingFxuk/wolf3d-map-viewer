@@ -51,6 +51,9 @@ a.wiki-link:hover, .quick-links a:hover { color: #1e90ff; text-decoration: under
 .wiki-info h4 { color: #ffa07a; margin: 10px 0 5px 0; }
 .wiki-info ol, .wiki-info ul { padding-left: 25px; }
 .wiki-info p { margin: 8px 0; }
+.wiki-info tr.score-row th, .wiki-info tr.score-row td { background-color: #2b1f1a; }
+.wiki-info .score-math { display: block; font-size: 12px; font-weight: normal; color: #aaa; }
+.wiki-info td.score-note { font-size: 12px; color: #aaa; font-style: italic; }
 .wiki-info a { color: #00bfff; }
 
 /* Quick links at the bottom */
@@ -123,6 +126,21 @@ var WIKI_PAGE_BASE = "https://wolfenstein.fandom.com/wiki/";
 var WIKI_API = "https://wolfenstein.fandom.com/api.php";
 var STEAM_GUIDE_URL = "https://steamcommunity.com/sharedfiles/filedetails/?id=1325446230";
 var STEAM_HASH_PREFIX = "#";   // Steam guides jump to a section when the section ID follows the #
+
+// Your score carries over from floor to floor.
+// A regular floor finished with 100% kills, 100% secrets and 100% treasure
+// adds 3 x 10,000 on its tally. Beating the par time adds 500 per second on top
+// of that, but how fast you were can't be known, so it is left out.
+var PERFECT_BONUS_PER_FLOOR = 30000;
+
+// The secret floor works differently: no percentages and no par time, just
+// one flat bonus for finishing it.
+var SECRET_FLOOR_BONUS = 15000;
+
+// Which floor holds the secret elevator. The wiki page for the secret level
+// says this ("Accessed from Episode 4, Floor 3"), so this list is only a backup
+// for when it doesn't. Fill in the other episodes if you need them.
+var secretEntryFloorBackup = { 1: 1, 2: 1, 4: 3 };
 
 // Image folder for each map. The image address is:
 // WIKI_IMAGE_BASE + folder + "/WOLF3D_" + code + ".PNG"
@@ -210,6 +228,7 @@ var currentCode = "";      // the level currently on screen
 var currentIndex = 0;      // its position in the levels list
 var preloadedImages = {};  // keeps preloaded maps in memory so the browser reuses them
 var jsonpCounter = 0;      // gives each JSONP request its own function name
+var scoreCache = {};       // remembers each floor's "Highscore" numbers, by wiki page
 
 var select = document.getElementById("levelSelect");
 var mapImg = document.getElementById("mapImg");
@@ -253,6 +272,7 @@ function buildLevels() {
             levels.push({
                 code: code,
                 name: name,
+                episode: ep,
                 floor: fl,
                 wikiPage: "Episode_" + ep + "/Floor_" + fl
             });
@@ -671,6 +691,7 @@ function showWikiHtml(code, html) {
     // Ignore the result if the person has already moved to another level
     if (code === currentCode) {
         wikiInfo.innerHTML = html;
+        addScoreRows(code);
     }
 }
 
@@ -748,43 +769,524 @@ function requestWikiDataJsonp(url, onSuccess, onFailure) {
     document.head.appendChild(script);
 }
 
-function loadWikiInfo(level) {
+// Asks the wiki for one page. Tries a normal fetch first, then the script-tag method.
+function requestWikiPage(wikiPage, onSuccess, onFailure) {
     let params;
+
+    params = "?action=parse&prop=text&redirects=1&format=json&page=" + encodeURIComponent(wikiPage);
+
+    fetch(WIKI_API + params + "&origin=*")
+        .then(function (response) {
+            return response.json();
+        })
+        .then(
+            function (data) {
+                onSuccess(data);
+            },
+            function (error) {
+                console.log("fetch failed, trying JSONP instead:", error);
+                requestWikiDataJsonp(WIKI_API + params, onSuccess, onFailure);
+            }
+        );
+}
+
+function loadWikiInfo(level) {
     let code;
     let failMessage;
 
     code = level.code;
 
     if (wikiCache[code] !== undefined) {
-        wikiInfo.innerHTML = wikiCache[code];
+        showWikiHtml(code, wikiCache[code]);
     } else {
         wikiInfo.innerHTML = "<p class='hint'>Loading wiki stats...</p>";
         failMessage = "<p class='hint'>Couldn't load wiki stats. Check your connection or ad blocker, or use the wiki link above.</p>";
-        params = "?action=parse&prop=text&redirects=1&format=json&page=" + encodeURIComponent(level.wikiPage);
 
-        // First try a normal fetch. If that fails, try the script-tag method.
-        fetch(WIKI_API + params + "&origin=*")
-            .then(function (response) {
-                return response.json();
-            })
-            .then(
-                function (data) {
-                    handleWikiData(code, data);
-                },
-                function (error) {
-                    console.log("fetch failed, trying JSONP instead:", error);
-                    requestWikiDataJsonp(
-                        WIKI_API + params,
-                        function (data) {
-                            handleWikiData(code, data);
-                        },
-                        function () {
-                            console.log("JSONP failed too");
-                            showWikiHtml(code, failMessage);
-                        }
-                    );
+        requestWikiPage(
+            level.wikiPage,
+            function (data) {
+                handleWikiData(code, data);
+            },
+            function () {
+                console.log("JSONP failed too");
+                showWikiHtml(code, failMessage);
+            }
+        );
+    }
+}
+
+// ---------------------------------------------------------------
+// SCORE ROWS
+// Your score carries over from floor to floor, so every floor after Floor 1
+// starts with what you earned on the floors before it. These rows show that
+// score and the sums that lead to the score on screen.
+// The secret floor sits between the floor that holds its elevator and the
+// next floor, and it pays the same end-of-level bonuses as any other floor.
+// ---------------------------------------------------------------
+function formatScore(number) {
+    return number.toLocaleString("en-US");
+}
+
+// How the wiki labels the row with the highscores
+var HIGHSCORE_LABEL = /high\s*score|before\s*bonuses/i;
+
+// Finds the table row with a label cell matching the pattern (e.g. /accessed from/i).
+// Label cells are short, which keeps this from matching a big cell that holds a whole table.
+function findRowByLabel(root, pattern) {
+    let cells;
+    let row;
+    let i;
+
+    row = null;
+    cells = root.querySelectorAll("th, td");
+    i = 0;
+    while (row === null && i < cells.length) {
+        if (cells[i].textContent.length < 80 && pattern.test(cells[i].textContent)) {
+            row = cells[i].closest("tr");
+        }
+        i = i + 1;
+    }
+    return row;
+}
+
+// Reads the "Highscore (before bonuses)" row: one number per column, and how
+// many columns each number spans. The wiki can use either normal cells (td) or
+// header cells (th) for the numbers, so both are accepted. Everything after the
+// label cell counts as a number. Gives back null if the row isn't usable.
+function readHighscoreRow(root) {
+    let table;
+    let row;
+    let cell;
+    let digits;
+    let result;
+    let usable;
+    let labelSeen;
+    let i;
+
+    result = null;
+    table = root.querySelector("table.infobox");
+    if (table === null) {
+        table = root;
+    }
+
+    row = findRowByLabel(table, HIGHSCORE_LABEL);
+    if (row !== null) {
+        result = { row: row, values: [], spans: [] };
+        usable = true;
+        labelSeen = false;
+        for (i = 0; i < row.children.length; i = i + 1) {
+            cell = row.children[i];
+            if (cell.tagName === "TD" || cell.tagName === "TH") {
+                if (labelSeen === false && HIGHSCORE_LABEL.test(cell.textContent)) {
+                    labelSeen = true;
+                } else {
+                    digits = cell.textContent.replace(/[^0-9]/g, "");
+                    if (digits === "") {
+                        usable = false;
+                    }
+                    result.values.push(parseInt(digits, 10));
+                    result.spans.push(parseInt(cell.getAttribute("colspan") || "1", 10));
                 }
+            }
+        }
+        if (usable === false || labelSeen === false || result.values.length === 0) {
+            result = null;
+        }
+    }
+    return result;
+}
+
+// Reads "Accessed from Episode 4, Floor 3" from a secret level's info box.
+// Gives back the floor number, or 0 if neither the wiki nor the backup list knows.
+function findEntryFloor(root, episode) {
+    let row;
+    let match;
+    let floor;
+
+    floor = 0;
+    row = findRowByLabel(root, /accessed\s*from/i);
+    if (row !== null) {
+        match = row.textContent.match(/Floor\s*(\d+)/i);
+        if (match) {
+            floor = parseInt(match[1], 10);
+        }
+    }
+    if (floor === 0 && secretEntryFloorBackup[episode] !== undefined) {
+        floor = secretEntryFloorBackup[episode];
+    }
+    return floor;
+}
+
+// Gets one floor's highscore numbers (from the cache if we already have them).
+// For a secret floor it also works out which floor holds the elevator to it.
+function loadFloorInfo(episode, floor, onDone) {
+    let wikiPage;
+
+    wikiPage = "Episode_" + episode + "/Floor_" + floor;
+
+    if (scoreCache[wikiPage] !== undefined) {
+        onDone(scoreCache[wikiPage]);
+    } else {
+        requestWikiPage(
+            wikiPage,
+            function (data) {
+                let doc;
+                let scores;
+                let info;
+
+                info = null;
+                try {
+                    if (data.parse && data.parse.text) {
+                        doc = new DOMParser().parseFromString(data.parse.text["*"], "text/html");
+                        scores = readHighscoreRow(doc);
+                        if (scores !== null) {
+                            info = { values: scores.values, entryFloor: 0 };
+                            if (floor === 10) {
+                                info.entryFloor = findEntryFloor(doc, episode);
+                            }
+                        }
+                    }
+                } catch (error) {
+                    console.log("Could not read " + wikiPage + ":", error);
+                }
+
+                if (info !== null) {
+                    scoreCache[wikiPage] = info;
+                }
+                onDone(info);
+            },
+            function () {
+                onDone(null);
+            }
+        );
+    }
+}
+
+// Loads a list of floors of one episode. Calls onDone with a list of results
+// in the same order, or null if any floor couldn't be loaded.
+function loadFloors(episode, floorList, onDone) {
+    let results;
+    let remaining;
+    let failed;
+    let i;
+
+    results = [];
+    remaining = floorList.length;
+    failed = false;
+
+    function makeFloorHandler(slot) {
+        return function (info) {
+            if (info === null) {
+                failed = true;
+            }
+            results[slot] = info;
+            remaining = remaining - 1;
+            if (remaining === 0) {
+                if (failed === true) {
+                    onDone(null);
+                } else {
+                    onDone(results);
+                }
+            }
+        };
+    }
+
+    if (remaining === 0) {
+        onDone(results);
+    } else {
+        for (i = 0; i < floorList.length; i = i + 1) {
+            loadFloorInfo(episode, floorList[i], makeFloorHandler(i));
+        }
+    }
+}
+
+// The floors played before this one, in order. Floor 10 stands for the secret
+// floor: it comes straight after the floor that holds its elevator.
+// On the secret floor itself, only the floors up to that elevator count.
+// If the elevator floor isn't known (entryFloor 0) the secret floor is left out.
+function computeRoute(level, entryFloor) {
+    let route;
+    let lastFloor;
+    let fl;
+
+    route = [];
+    if (level.floor === 10) {
+        lastFloor = entryFloor;
+    } else {
+        lastFloor = level.floor - 1;
+    }
+
+    for (fl = 1; fl <= lastFloor; fl = fl + 1) {
+        route.push(fl);
+        if (level.floor !== 10 && fl === entryFloor) {
+            route.push(10);
+        }
+    }
+    return route;
+}
+
+function describeRoute(route) {
+    let regular;
+    let hasSecret;
+    let text;
+    let i;
+
+    regular = 0;
+    hasSecret = false;
+    for (i = 0; i < route.length; i = i + 1) {
+        if (route[i] === 10) {
+            hasSecret = true;
+        } else {
+            regular = regular + 1;
+        }
+    }
+
+    if (regular === 1) {
+        text = "Floor 1";
+    } else {
+        text = "Floors 1-" + regular;
+    }
+    if (hasSecret === true) {
+        text = text + " + secret floor";
+    }
+    return text;
+}
+
+// Picks the number for one difficulty column. Some pages give one number
+// for every difficulty, so a list with a single number is used for all.
+function numberForColumn(values, column, columnCount) {
+    let result;
+
+    result = NaN;
+    if (values.length === columnCount) {
+        result = values[column];
+    } else if (values.length === 1) {
+        result = values[0];
+    }
+    return result;
+}
+
+function makeScoreRow(labelText, spans, mainTexts, mathTexts) {
+    let row;
+    let label;
+    let cell;
+    let main;
+    let math;
+    let i;
+
+    row = document.createElement("tr");
+    row.className = "score-row";
+
+    label = document.createElement("th");
+    label.textContent = labelText;
+    row.appendChild(label);
+
+    for (i = 0; i < mainTexts.length; i = i + 1) {
+        cell = document.createElement("td");
+        if (spans[i] > 1) {
+            cell.setAttribute("colspan", spans[i]);
+        }
+        main = document.createElement("strong");
+        main.textContent = mainTexts[i];
+        cell.appendChild(main);
+        math = document.createElement("span");
+        math.className = "score-math";
+        math.textContent = mathTexts[i];
+        cell.appendChild(math);
+        row.appendChild(cell);
+    }
+    return row;
+}
+
+function makeScoreMessageRow(labelText, message, columnCount) {
+    let row;
+    let label;
+    let cell;
+
+    row = document.createElement("tr");
+    row.className = "score-row";
+    label = document.createElement("th");
+    label.textContent = labelText;
+    row.appendChild(label);
+    cell = document.createElement("td");
+    cell.setAttribute("colspan", columnCount);
+    cell.className = "score-note";
+    cell.textContent = message;
+    row.appendChild(cell);
+    return row;
+}
+
+function showScoreMessage(code, loadingRow, message) {
+    if (code === currentCode) {
+        loadingRow.lastChild.textContent = message;
+    }
+}
+
+// Works out the sums and swaps the "Loading" row for the real rows
+function fillScoreRows(code, level, here, route, infos, loadingRow, secretLeftOut) {
+    let columnCount;
+    let column;
+    let routeIndex;
+    let value;
+    let rawSum;
+    let bonus;
+    let carriedIn;
+    let cleared;
+    let afterBonus;
+    let thisFloorBonus;
+    let noteText;
+    let carriedTexts;
+    let carriedMath;
+    let clearedTexts;
+    let clearedMath;
+    let afterTexts;
+    let afterMath;
+    let valid;
+    let columnsInRow;
+    let rowsToAdd;
+    let note;
+    let noteCell;
+    let parent;
+    let i;
+
+    columnCount = here.values.length;
+
+    // 30,000 for each regular floor played, 15,000 for the secret floor
+    bonus = 0;
+    for (i = 0; i < route.length; i = i + 1) {
+        if (route[i] === 10) {
+            bonus = bonus + SECRET_FLOOR_BONUS;
+        } else {
+            bonus = bonus + PERFECT_BONUS_PER_FLOOR;
+        }
+    }
+    if (level.floor === 10) {
+        thisFloorBonus = SECRET_FLOOR_BONUS;
+    } else {
+        thisFloorBonus = PERFECT_BONUS_PER_FLOOR;
+    }
+    carriedTexts = [];
+    carriedMath = [];
+    clearedTexts = [];
+    clearedMath = [];
+    afterTexts = [];
+    afterMath = [];
+    valid = true;
+
+    for (column = 0; column < columnCount; column = column + 1) {
+        rawSum = 0;
+        for (routeIndex = 0; routeIndex < infos.length; routeIndex = routeIndex + 1) {
+            value = numberForColumn(infos[routeIndex].values, column, columnCount);
+            if (isNaN(value)) {
+                valid = false;
+            } else {
+                rawSum = rawSum + value;
+            }
+        }
+        carriedIn = rawSum + bonus;
+        cleared = carriedIn + here.values[column];
+        afterBonus = cleared + thisFloorBonus;
+
+        carriedTexts.push(formatScore(carriedIn));
+        carriedMath.push(formatScore(rawSum) + " + " + formatScore(bonus));
+        clearedTexts.push(formatScore(cleared));
+        clearedMath.push(formatScore(carriedIn) + " + " + formatScore(here.values[column]));
+        afterTexts.push(formatScore(afterBonus));
+        afterMath.push(formatScore(cleared) + " + " + formatScore(thisFloorBonus));
+    }
+
+    parent = loadingRow.parentNode;
+    if (code === currentCode && parent !== null) {
+        if (valid === false) {
+            parent.insertBefore(
+                makeScoreMessageRow("Carried-in score", "The difficulty columns on the wiki pages don't line up, so no sum is shown.", columnCount),
+                loadingRow
             );
+        } else {
+            rowsToAdd = [
+                makeScoreRow("Carried in (" + describeRoute(route) + ")", here.spans, carriedTexts, carriedMath),
+                makeScoreRow("Score once this floor is cleared", here.spans, clearedTexts, clearedMath),
+                makeScoreRow("After this floor's bonuses", here.spans, afterTexts, afterMath)
+            ];
+            for (i = 0; i < rowsToAdd.length; i = i + 1) {
+                parent.insertBefore(rowsToAdd[i], loadingRow);
+            }
+
+            columnsInRow = 1;
+            for (i = 0; i < here.spans.length; i = i + 1) {
+                columnsInRow = columnsInRow + here.spans[i];
+            }
+            note = document.createElement("tr");
+            note.className = "score-row";
+            noteCell = document.createElement("td");
+            noteCell.setAttribute("colspan", columnsInRow);
+            noteCell.className = "score-note";
+            noteText = "Assumes 100% kills, secrets and treasure on every regular floor (+30,000 each) and the secret floor's flat 15,000, which has no percentages or time bonus. Time bonuses (500 per second under a floor's par time) depend on how fast you were, so they are not included: your own score minus the figure here is what they added. \"Once this floor is cleared\" is the score on screen before you leave; \"After this floor's bonuses\" is what the next floor starts with.";
+            if (secretLeftOut === true) {
+                noteText = noteText + " The secret floor is not included because the wiki doesn't say which floor leads to it.";
+            }
+            noteCell.textContent = noteText;
+            note.appendChild(noteCell);
+            parent.insertBefore(note, loadingRow);
+        }
+        parent.removeChild(loadingRow);
+    }
+}
+
+function loadRouteAndFill(code, level, here, entryFloor, loadingRow) {
+    let route;
+    let secretLeftOut;
+
+    route = computeRoute(level, entryFloor);
+    secretLeftOut = (entryFloor === 0 && level.floor !== 10);
+
+    loadFloors(level.episode, route, function (infos) {
+        if (infos === null) {
+            showScoreMessage(code, loadingRow, "Couldn't load the earlier floors from the wiki, so no sum is shown.");
+        } else {
+            fillScoreRows(code, level, here, route, infos, loadingRow, secretLeftOut);
+        }
+    });
+}
+
+// Called every time wiki info is shown. Floor 1 has nothing carried in, so it is skipped.
+function addScoreRows(code) {
+    let level;
+    let here;
+    let loadingRow;
+    let hint;
+
+    level = levels[currentIndex];
+
+    if (level.code === code && level.floor >= 2) {
+        here = readHighscoreRow(wikiInfo);
+        if (here === null) {
+            if (wikiInfo.querySelector("table") !== null) {
+                hint = document.createElement("p");
+                hint.className = "hint";
+                hint.textContent = "Couldn't read the Highscore row in the wiki table, so no carried-in score is shown.";
+                wikiInfo.appendChild(hint);
+            }
+        } else {
+            loadingRow = makeScoreMessageRow("Carried-in score", "Loading the earlier floors...", here.values.length);
+            here.row.parentNode.insertBefore(loadingRow, here.row.nextSibling);
+
+            // The secret floor's wiki page says which floor holds its elevator
+            loadFloors(level.episode, [10], function (secretInfos) {
+                let entryFloor;
+
+                entryFloor = 0;
+                if (secretInfos !== null) {
+                    entryFloor = secretInfos[0].entryFloor;
+                }
+
+                if (entryFloor === 0 && level.floor === 10) {
+                    showScoreMessage(code, loadingRow, "Couldn't find which floor leads to this secret floor, so no sum is shown.");
+                } else {
+                    loadRouteAndFill(code, level, here, entryFloor, loadingRow);
+                }
+            });
+        }
     }
 }
 
