@@ -1,0 +1,27 @@
+{
+  "name": "wolf3d-map-viewer",
+  "version": "1.0.0",
+  "description": "A simple single-page viewer for Wolfenstein 3D level maps",
+  "main": "index.html",
+  "scripts": {
+    "test": "echo \"No tests configured\" && exit 0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/RisingFxuk/wolf3d-map-viewer.git"
+  },
+  "keywords": [
+    "wolfenstein",
+    "maps",
+    "viewer"
+  ],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/RisingFxuk/wolf3d-map-viewer/issues"
+  },
+  "homepage": "https://github.com/RisingFxuk/wolf3d-map-viewer#readme",
+  "dependencies": {
+    "@vercel/analytics": "^2.0.1"
+  }
+}
