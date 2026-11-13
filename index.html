@@ -180,6 +180,8 @@ a.wiki-link:hover, .quick-links a:hover { color: #1e90ff; text-decoration: under
 .map-arrow-next { right: 4px; }
 .map-caption { margin-top: 8px; font-size: 14px; color: #ddd; }
 .map-caption .map-count { color: #ff8a65; font-weight: bold; }
+.map-caption .map-credit { font-size: 12px; color: #aaa; }
+.map-caption .map-credit a { color: #00bfff; }
 .map-dots { display: inline-flex; gap: 6px; margin-left: 8px; vertical-align: middle; }
 .map-dots span { width: 8px; height: 8px; border-radius: 50%; background-color: #555; }
 .map-dots span.on { background-color: var(--accent-color); }
@@ -342,7 +344,7 @@ html.warn-open .lb-caption, html.warn-open .zoom-hint { left: calc((100vw - var(
         <h2>Wolfenstein 3D levels</h2>
         <div id="quickLinks"></div>
     </section>
-    <p class="credits">Headings use the "Deathshead" font by Iconian Fonts (free for non-commercial use). Stats come from the <a href="https://wolfenstein.fandom.com" target="_blank" rel="noopener">Wolfenstein Wiki</a> and records from <a href="https://www.speedrun.com/wolf3d" target="_blank" rel="noopener">speedrun.com</a>.</p>
+    <p class="credits">Headings use the "Deathshead" font by Iconian Fonts (free for non-commercial use). Stats come from the <a href="https://wolfenstein.fandom.com" target="_blank" rel="noopener">Wolfenstein Wiki</a> and records from <a href="https://www.speedrun.com/wolf3d" target="_blank" rel="noopener">speedrun.com</a>. The extra "Steam guide" maps are from <a href="https://steamcommunity.com/sharedfiles/filedetails/?id=1325446230" target="_blank" rel="noopener">Maps and secrets (episode 1..6)</a> by <a href="https://steamcommunity.com/id/m-alice" target="_blank" rel="noopener">Malice</a>, based on maps (c) Christopher Long (LtCmdData), 2005.</p>
 </div>
 
 <div id="lightbox" class="lightbox-overlay">
@@ -483,6 +485,74 @@ var steamSectionIds = {
     "E1M05": "2388869",
     "E2M10": "2389101",
     "E3M04": "2389127"
+};
+
+// The maps from the Steam guide "Maps and secrets (episode 1..6)" by Malice, one per level
+// (the part after /ugc/ in each picture's address). They are added after the other maps.
+// The guide's maps are based on pictures (c) Christopher Long (LtCmdData), 2005.
+var STEAM_GUIDE_URL = "https://steamcommunity.com/sharedfiles/filedetails/?id=1325446230";
+var STEAM_GUIDE_AUTHOR_URL = "https://steamcommunity.com/id/m-alice";
+var steamGuideMaps = {
+    "E1M01": "927051893382906465/FDB5BCBC52B111B090FCAB571C4300ADFA8B1A1A",
+    "E1M02": "927051893382906680/1BC26834659BF07F6A4A047DE44A78E4AF095FF3",
+    "E1M03": "927051893382906920/B8136E76D8F8BC63ED29584A47206053CA425B44",
+    "E1M04": "927051893382907133/C2A603AA26707165CE678AD5649EFD7DF0A2E6D7",
+    "E1M05": "927051893382907334/DD788FB6DE6EE3CA05B8DFE26017325E906AE98D",
+    "E1M06": "927051893382950601/00780A51CB2E6DFF9049B6C48E140DB978FE47BB",
+    "E1M07": "927051893382951834/782FC47FCFDDF146EEE35215A3AD27654DBE273F",
+    "E1M08": "927051893382953265/E9099D302F0C9D60A371AED82C8E1DFBC6C23E50",
+    "E1M09": "927051893382954519/F26C0D28FE0055BE6B2282FDD8937579D209D73F",
+    "E1M10": "927051893382955604/964801654DA2F2774D1AD2B0603B8CA01E02407D",
+    "E2M01": "927051893383356148/E565A523305E9948F0CD80748A469CCFDFBDF689",
+    "E2M02": "927051893383356398/BDDA5498123B8A04A2DC197A6F9C894A82E11435",
+    "E2M03": "927051893383356586/D32402B6030A3198C63FB13F9C2588824783C620",
+    "E2M04": "927051893383356799/4C25AD9A93BC40E79E8648B4865CF0D0C8051456",
+    "E2M05": "927051893383356983/28A71C7B8C922C0F285F3BFA2EBA4090146E584C",
+    "E2M06": "927051893383357214/40CEC50AB47F581FDE28EE808D0C897D7AB3B823",
+    "E2M07": "927051893383357463/F6CB71A38C2B0D39B2F70BD20DEAB1C0E746A789",
+    "E2M08": "927051893383357650/7C0496BD009C5AF41C81A85CBD5C965C6DC72467",
+    "E2M09": "927051893383357809/CFB233EBAE4A738606EBF89FC32F0281DAD1319E",
+    "E2M10": "927051893383357978/B9325C0F9D6BBC717DBAA57E087D833C4416A382",
+    "E3M01": "927051893383405026/C185A0B4FDC2A8BD643C03DE7892D07EBBDF2F4A",
+    "E3M02": "927051893383406747/8BAFB76086F5BBA4613E037A4B27963F2156FB4F",
+    "E3M03": "927051893383408104/FAB88FF8ECC6E64878E467DB3BAC4593463A374E",
+    "E3M04": "927051893383410617/D45B56B6B1DECCA8B59ABE75F38AE3650DE18B6A",
+    "E3M05": "927051893383412101/16DC453515AD63A0FF7A8CA96EF0A7587D3C4645",
+    "E3M06": "927051893383423593/7293EEA1E4DBE590C96E8690695051D3647A3EAD",
+    "E3M07": "927051893383424897/E3484F3051B016658A5BBCFDE0935EF8FE94CC58",
+    "E3M08": "927051893383426264/904AAC4EE51CE8B1D581731BDAD4CFE75026BB7D",
+    "E3M09": "927051893383427383/131E5D69F0D8B9E672BCE587C3C06DF771A01161",
+    "E3M10": "927051893383428993/FFC25ACEFF3BE5756CE396BEF77ACD60B8418E4F",
+    "E4M01": "927051893383480686/1DD27D17D3563A4C7521F5F0244C975557B54C15",
+    "E4M02": "927051893383481846/03029F8DDC3A6C7FF818EA64F7ACB5B59B3360FB",
+    "E4M03": "927051893383482980/E44057F4A42C432E70C10D87F52377C5029A15F9",
+    "E4M04": "927051893383486466/5F738529D70E167E7D19DB1DC5F7CD527672D6FE",
+    "E4M05": "927051893383488233/40AECE91DE8FF491C780439256390C5B812711DA",
+    "E4M06": "927051893383506548/B57DEC76F70286234BAC5DB261539360E6A470CC",
+    "E4M07": "927051893383507648/99AA6A492701F1DA0A7053DC75B110804F114200",
+    "E4M08": "927051893383508660/F6F19D0AF6D3374B9317FAB13C0A6429DF24082F",
+    "E4M09": "927051893383509653/99F4DE34D0FE32025961A9ADF1C614AD112FA7FB",
+    "E4M10": "927051893383510584/501103A2430F9F9B63E0D8DFFBC879AAC597441F",
+    "E5M01": "927051893383522652/BA253A4C0A6086F714785D834047DF23B51DA064",
+    "E5M02": "927051893383523712/E3222218A8F1E5676F7C25B7D258B333E50C4B04",
+    "E5M03": "927051893383556334/D7F6B9EE49D5117BEB1B5DFFCB7D37E96B66C6AE",
+    "E5M04": "927051893383556558/9218E81105C034A5456DB0F5DE919BF29378FA8E",
+    "E5M05": "927051893383556784/B9CE7E4EF7BEAEF9DEA9F036EDA579457CDBADD3",
+    "E5M06": "927051893383574832/7EB921CE22F71DB05CFB3917AAA44FDB4771747B",
+    "E5M07": "927051893383576036/42F0CF6268A10293E268AC3E93FB1896096842DE",
+    "E5M08": "927051893383576872/5FF5818E75E0BA2858EF8D191FDAB7B41A39E9A0",
+    "E5M09": "927051893383577086/E0F27B1AF9F59003B2E130395EB0CF42F483DC2A",
+    "E5M10": "927051893383577257/1E70CF7224BD4B9F5C50209845C54C7EC3953505",
+    "E6M01": "927051893383600340/D676466BEB0381D3D9CFB23B74EAE1287C821966",
+    "E6M02": "927051893383600565/E036C36635111F99969F8ABAD6EE8803F9A7D194",
+    "E6M03": "927051893383608711/A1D9EA636328BCE290DBCA2D72EC5D85A9C32CBD",
+    "E6M04": "927051893383600932/42F5A0579D52BFBF813DFD67F86103D2CD03159A",
+    "E6M05": "927051893383601120/2C145F576E77E933EEC02C035D7F6B5E553FC77C",
+    "E6M06": "927051893383622725/33DB8CBC35D030626428432BAC8C9E280E159FB0",
+    "E6M07": "927051893383622938/B7F36501C757D5B00E64C8A4428FA3406046AB45",
+    "E6M08": "927051893383623130/79672D433258E270FD95ABE7E06546AE8D1CCA8A",
+    "E6M09": "927051893383623303/0ABD75866723D99C7D5FA1576525C935C567A206",
+    "E6M10": "927051893383623671/029E2FD0453DB346FA7216BB9CC486BFAE7041AD"
 };
 
 // Extra maps for a level, shown after the normal map with arrows to switch between them.
@@ -796,7 +866,7 @@ function mapKey(url) {
     let path;
     let name;
 
-    path = url.split("?")[0].replace(/\/revision\/.*$/, "");
+    path = url.split("?")[0].replace(/\/revision\/.*$/, "").replace(/\/+$/, "");
     name = path.substring(path.lastIndexOf("/") + 1);
     try {
         name = decodeURIComponent(name);
@@ -835,6 +905,9 @@ function getMapList(code) {
     }
     addMapsToList(list, seen, extraMaps[code]);
     addMapsToList(list, seen, discoveredMaps[code]);
+    if (steamGuideMaps[code] !== undefined) {
+        addMapsToList(list, seen, [{ label: "Steam guide: maps and secrets", url: "https://images.steamusercontent.com/ugc/" + steamGuideMaps[code] + "/", steamGuide: true }]);
+    }
     return list;
 }
 
@@ -893,6 +966,10 @@ function updateMapNav() {
         }
         mapCaption.innerHTML = "<span class='map-count'>" + countText + "</span>: " + escapeHtml(map.label) + "<span class='map-dots' aria-hidden='true'>" + dots + "</span>";
         lbCaption.textContent = countText + ": " + map.label;
+        if (map.steamGuide === true) {
+            mapCaption.innerHTML = mapCaption.innerHTML + "<br><span class='map-credit'>By <a href=\"" + STEAM_GUIDE_AUTHOR_URL + "\" target=\"_blank\" rel=\"noopener\">Malice</a> in <a href=\"" + STEAM_GUIDE_URL + "\" target=\"_blank\" rel=\"noopener\">this Steam guide</a>, from maps by Christopher Long (LtCmdData), 2005</span>";
+            lbCaption.textContent = lbCaption.textContent + " · by Malice";
+        }
         mapHint.textContent = MAP_HINT_TEXT + " Use the arrows to switch between this level's maps.";
         lbHint.textContent = LB_HINT_TEXT + " · arrows or swipe to switch maps";
         lightbox.classList.add("has-maps");
@@ -2122,7 +2199,7 @@ function openWarnPanel() {
     // a map called a route or solution gets its own button
     routeIndex = -1;
     for (i = 1; i < currentMaps.length; i = i + 1) {
-        if (routeIndex === -1 && /route|solution|path/i.test(currentMaps[i].label)) {
+        if (routeIndex === -1 && /route|solution|path|steam guide/i.test(currentMaps[i].label)) {
             routeIndex = i;
         }
     }
