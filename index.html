@@ -237,6 +237,7 @@ html.warn-open .lb-caption, html.warn-open .zoom-hint { left: calc((100vw - var(
 .lb-warning-body .strategy-box, .lb-warning-body h3 { margin-top: 0; }
 .lb-warning-body h3 { color: #ff6347; font-size: 22px; margin-bottom: 8px; }
 .lb-warning-body ul { padding-left: 20px; }
+.strategy-box h4, .lb-warning-body h4 { margin: 14px 0 6px 0; color: #ff8a65; font-size: 16px; }
 .lb-warn-go { margin-top: 12px; padding: 8px 14px; min-height: 40px; background-color: var(--accent-color); color: #fff; border: 0; border-radius: 6px; }
 
 /* Tablets and phones: one column, map first */
@@ -344,7 +345,7 @@ html.warn-open .lb-caption, html.warn-open .zoom-hint { left: calc((100vw - var(
         <h2>Wolfenstein 3D levels</h2>
         <div id="quickLinks"></div>
     </section>
-    <p class="credits">Headings use the "Deathshead" font by Iconian Fonts (free for non-commercial use). Stats come from the <a href="https://wolfenstein.fandom.com" target="_blank" rel="noopener">Wolfenstein Wiki</a> and records from <a href="https://www.speedrun.com/wolf3d" target="_blank" rel="noopener">speedrun.com</a>. The extra "Steam guide" maps are from <a href="https://steamcommunity.com/sharedfiles/filedetails/?id=1325446230" target="_blank" rel="noopener">Maps and secrets (episode 1..6)</a> by <a href="https://steamcommunity.com/id/m-alice" target="_blank" rel="noopener">Malice</a>, based on maps (c) Christopher Long (LtCmdData), 2005.</p>
+    <p class="credits">Headings use the "Deathshead" font by Iconian Fonts (free for non-commercial use). Stats come from the <a href="https://wolfenstein.fandom.com" target="_blank" rel="noopener">Wolfenstein Wiki</a> and records from <a href="https://www.speedrun.com/wolf3d" target="_blank" rel="noopener">speedrun.com</a>. The extra "Steam guide" maps are from <a href="https://steamcommunity.com/sharedfiles/filedetails/?id=1325446230" target="_blank" rel="noopener">Maps and secrets (episode 1..6)</a> by <a href="https://steamcommunity.com/id/m-alice" target="_blank" rel="noopener">Malice</a>, based on maps (c) Christopher Long (LtCmdData), 2005. The colour-coded maze map and tips for Episode 2 Floor 8 are from <a href="https://steamcommunity.com/sharedfiles/filedetails/?id=631005106" target="_blank" rel="noopener">RazorShader's guide</a>, including a tip by Zabla.</p>
 </div>
 
 <div id="lightbox" class="lightbox-overlay">
@@ -386,6 +387,74 @@ var PERFECT_BONUS_PER_FLOOR = 30000;
 // The secret floor works differently: no percentages and no par time, just
 // one flat bonus for finishing it.
 var SECRET_FLOOR_BONUS = 15000;
+
+// Floors that can't be finished with 100% of everything. The score sums normally assume
+// 100% on all three (+30,000), which would be too high for these.
+//   bonus: what the end-of-level tally pays instead of 30,000
+//   lostPoints: points the floor's highscore counts that can't be collected
+//   why: the explanation shown under the sums
+var scoreAdjustments = {
+    "E2M08": {
+        bonus: 10000,
+        lostPoints: 600,
+        why: "Episode 2 Floor 8 can't be finished with 100% secrets or treasure (6 crosses can't be collected and 18 secret walls can't be pushed), so it counts only the 10,000 kills bonus, and 600 less for the six crosses (100 each)."
+    }
+};
+
+function getScoreAdjustment(episode, floor) {
+    let code;
+
+    code = "E" + episode + "M" + (floor < 10 ? "0" : "") + floor;
+    if (scoreAdjustments[code] !== undefined) {
+        return scoreAdjustments[code];
+    }
+    return null;
+}
+
+// The end-of-level bonus for a regular floor
+function getFloorBonus(episode, floor) {
+    let adjustment;
+
+    adjustment = getScoreAdjustment(episode, floor);
+    if (adjustment !== null) {
+        return adjustment.bonus;
+    }
+    return PERFECT_BONUS_PER_FLOOR;
+}
+
+function getLostPoints(episode, floor) {
+    let adjustment;
+
+    adjustment = getScoreAdjustment(episode, floor);
+    if (adjustment !== null) {
+        return adjustment.lostPoints;
+    }
+    return 0;
+}
+
+// Explains any adjusted floor that is part of the sums for this level
+function describeScoreAdjustments(level, scenarios) {
+    let floors;
+    let text;
+    let adjustment;
+    let i;
+    let j;
+
+    floors = [level.floor];
+    for (i = 0; i < scenarios.length; i = i + 1) {
+        for (j = 0; j < scenarios[i].route.length; j = j + 1) {
+            floors.push(scenarios[i].route[j]);
+        }
+    }
+    text = "";
+    for (i = 0; i < floors.length; i = i + 1) {
+        adjustment = getScoreAdjustment(level.episode, floors[i]);
+        if (adjustment !== null && text.indexOf(adjustment.why) === -1) {
+            text = text + " " + adjustment.why;
+        }
+    }
+    return text;
+}
 
 // A floor finished under its par time pays this much for every second to spare.
 var TIME_BONUS_PER_SECOND = 500;
@@ -560,7 +629,12 @@ var steamGuideMaps = {
 // wiki's own Map section holds more maps (the script looks for those too).
 var extraMaps = {
     "E2M08": [
-        { label: "Aardwolf maze routes", url: WIKI_IMAGE_BASE + "f/f0/Aardwolf_maze_routes.png" }
+        { label: "Aardwolf maze routes", url: WIKI_IMAGE_BASE + "f/f0/Aardwolf_maze_routes.png" },
+        {
+            label: "Steam guide: colour-coded maze map",
+            url: "https://images.steamusercontent.com/ugc/321249742320925189/137442BC84390C7A9636E65BB0F31D94D6CAFAAE/",
+            credit: { by: "RazorShader", byUrl: "https://steamcommunity.com/id/razorshader", guideUrl: "https://steamcommunity.com/sharedfiles/filedetails/?id=631005106" }
+        }
     ]
 };
 
@@ -570,12 +644,24 @@ var extraMaps = {
 var levelWarnings = {
     "E2M08": {
         title: "WALL WARNING: THE AARDWOLF MAZE",
-        intro: "Not every secret wall in the maze is safe to push. Look at the route map first (use the arrows beside the map to switch to it) instead of pushing walls at random.",
+        intro: "Not every secret wall in the maze is safe to push. Look at the colour-coded maze map first (use the arrows beside the map to switch to it) instead of pushing walls at random.",
         points: [
             "The maze is a huge set of secret pushwalls. Most of them lead to dead ends or to treasure you can't actually collect, while some paths lead to 1-Ups you can reach.",
             "Near the end, two pushwalls sit next to each other: the left one leads to the Aardwolf sign and the right one to the second Hans Grosse. Be careful, because pushing one can cut you off from the other. Decide what you want before you push."
         ],
-        credit: { text: "Wolfenstein Wiki: Episode 2/Floor 8", url: WIKI_PAGE_BASE + "Episode_2/Floor_8" }
+        solutionTitle: "HOW TO GET THROUGH THE MAZE",
+        solution: [
+            "Follow the colour-coded maze map by RazorShader. It marks where every pushed wall ends up and colours the path to each secret, and the rest of the map is darkened so the route stands out.",
+            "At the yellow junction you have to choose: go for one of the two Hans Grosse fights, or go to the Aardwolf room. Taking one route blocks the other, but once you have collected the 1-Up (or made the kill) you can still push the other wall to add to your secret count.",
+            "In the 1992 release the Aardwolf room has the famous \"Call Apogee, say Aardwolf\" sign. In later releases it is a pile of bones next to a 1-Up.",
+            "Tip from Zabla: in the room where you fight the second Hans Grosse there are two pushable walls. After the fight, push the wall on the left, then push it again. This only works in the direction you pushed the right wall away from, and it raises your secret count to up to 90%.",
+            "This floor can't be finished with 100% of everything: 6 crosses can't be collected and 18 walls can't be pushed. If you kill both Hans Grosse, RazorShader counts a best of 100% kills, 89% secrets and 78% treasure (the end-of-level screen shows 100%, 98% and 97%)."
+        ],
+        credits: [
+            { text: "Wolfenstein Wiki: Episode 2/Floor 8", url: WIKI_PAGE_BASE + "Episode_2/Floor_8" },
+            { text: "RazorShader's Steam guide (map and tips)", url: "https://steamcommunity.com/sharedfiles/filedetails/?id=631005106" },
+            { text: "Zabla's comment on that guide (Sep 2023)", url: "https://steamcommunity.com/sharedfiles/filedetails/?id=631005106" }
+        ]
     }
 };
 
@@ -591,7 +677,7 @@ var secretsOverrides = {
     "E2M08": {
         fastestSecrets: 2,
         full: { seconds: 20 * 60 + 27, secrets: 89 },
-        note: "Some maze walls block others, so 89% secrets appears to be the most this floor allows."
+        note: "Some maze walls block others, so 100% secrets isn't possible on this floor (about 89% normally, up to about 90% with the extra push)."
     }
 };
 
@@ -906,7 +992,7 @@ function getMapList(code) {
     addMapsToList(list, seen, extraMaps[code]);
     addMapsToList(list, seen, discoveredMaps[code]);
     if (steamGuideMaps[code] !== undefined) {
-        addMapsToList(list, seen, [{ label: "Steam guide: maps and secrets", url: "https://images.steamusercontent.com/ugc/" + steamGuideMaps[code] + "/", steamGuide: true }]);
+        addMapsToList(list, seen, [{ label: "Steam guide: maps and secrets", url: "https://images.steamusercontent.com/ugc/" + steamGuideMaps[code] + "/", credit: { by: "Malice", byUrl: STEAM_GUIDE_AUTHOR_URL, guideUrl: STEAM_GUIDE_URL, note: "from maps by Christopher Long (LtCmdData), 2005" } }]);
     }
     return list;
 }
@@ -966,9 +1052,9 @@ function updateMapNav() {
         }
         mapCaption.innerHTML = "<span class='map-count'>" + countText + "</span>: " + escapeHtml(map.label) + "<span class='map-dots' aria-hidden='true'>" + dots + "</span>";
         lbCaption.textContent = countText + ": " + map.label;
-        if (map.steamGuide === true) {
-            mapCaption.innerHTML = mapCaption.innerHTML + "<br><span class='map-credit'>By <a href=\"" + STEAM_GUIDE_AUTHOR_URL + "\" target=\"_blank\" rel=\"noopener\">Malice</a> in <a href=\"" + STEAM_GUIDE_URL + "\" target=\"_blank\" rel=\"noopener\">this Steam guide</a>, from maps by Christopher Long (LtCmdData), 2005</span>";
-            lbCaption.textContent = lbCaption.textContent + " · by Malice";
+        if (map.credit) {
+            mapCaption.innerHTML = mapCaption.innerHTML + "<br><span class='map-credit'>By <a href=\"" + map.credit.byUrl + "\" target=\"_blank\" rel=\"noopener\">" + escapeHtml(map.credit.by) + "</a> in <a href=\"" + map.credit.guideUrl + "\" target=\"_blank\" rel=\"noopener\">this Steam guide</a>" + (map.credit.note ? ", " + escapeHtml(map.credit.note) : "") + "</span>";
+            lbCaption.textContent = lbCaption.textContent + " \u00b7 by " + map.credit.by;
         }
         mapHint.textContent = MAP_HINT_TEXT + " Use the arrows to switch between this level's maps.";
         lbHint.textContent = LB_HINT_TEXT + " · arrows or swipe to switch maps";
@@ -2255,6 +2341,7 @@ function clearLevelWarning() {
 // data: { title, intro, points: [text], credit: { text, url } }
 function showLevelWarning(data) {
     let html;
+    let credits;
     let i;
 
     html = "<h3>\u26A0\uFE0F " + escapeHtml(data.title) + "</h3>";
@@ -2268,8 +2355,27 @@ function showLevelWarning(data) {
         }
         html = html + "</ul>";
     }
+    // a second block with the way through (hints and tips)
+    if (data.solution && data.solution.length > 0) {
+        html = html + "<h4>" + escapeHtml(data.solutionTitle || "HOW TO SOLVE IT") + "</h4><ul>";
+        for (i = 0; i < data.solution.length; i = i + 1) {
+            html = html + "<li>" + escapeHtml(data.solution[i]) + "</li>";
+        }
+        html = html + "</ul>";
+    }
+    credits = data.credits || [];
     if (data.credit) {
-        html = html + "<p class='warning-credit'>Source: <a href=\"" + escapeHtml(data.credit.url).replace(/\"/g, "&quot;") + "\" target=\"_blank\" rel=\"noopener\">" + escapeHtml(data.credit.text) + "</a></p>";
+        credits = credits.concat([data.credit]);
+    }
+    if (credits.length > 0) {
+        html = html + "<p class='warning-credit'>Source" + (credits.length > 1 ? "s" : "") + ": ";
+        for (i = 0; i < credits.length; i = i + 1) {
+            if (i > 0) {
+                html = html + ", ";
+            }
+            html = html + "<a href=\"" + escapeHtml(credits[i].url).replace(/"/g, "&quot;") + "\" target=\"_blank\" rel=\"noopener\">" + escapeHtml(credits[i].text) + "</a>";
+        }
+        html = html + "</p>";
     }
     levelWarningBox.innerHTML = html;
     levelWarningBox.style.display = "block";
@@ -2910,13 +3016,13 @@ function buildScenarioRows(level, here, route, infoByFloor) {
         if (route[i] === 10) {
             bonus = bonus + SECRET_FLOOR_BONUS;
         } else {
-            bonus = bonus + PERFECT_BONUS_PER_FLOOR;
+            bonus = bonus + getFloorBonus(level.episode, route[i]);
         }
     }
     if (level.floor === 10) {
         thisFloorBonus = SECRET_FLOOR_BONUS;
     } else {
-        thisFloorBonus = PERFECT_BONUS_PER_FLOOR;
+        thisFloorBonus = getFloorBonus(level.episode, level.floor);
     }
 
     carriedTexts = [];
@@ -2934,11 +3040,11 @@ function buildScenarioRows(level, here, route, infoByFloor) {
             if (isNaN(value)) {
                 valid = false;
             } else {
-                rawSum = rawSum + value;
+                rawSum = rawSum + value - getLostPoints(level.episode, route[routeIndex]);
             }
         }
         carriedIn = rawSum + bonus;
-        cleared = carriedIn + here.values[column];
+        cleared = carriedIn + here.values[column] - getLostPoints(level.episode, level.floor);
         afterBonus = cleared + thisFloorBonus;
 
         carriedTexts.push(formatScore(carriedIn));
@@ -2948,7 +3054,7 @@ function buildScenarioRows(level, here, route, infoByFloor) {
             carriedMath.push(formatScore(rawSum) + " + " + formatScore(bonus));
         }
         clearedTexts.push(formatScore(cleared));
-        clearedMath.push(formatScore(carriedIn) + " + " + formatScore(here.values[column]));
+        clearedMath.push(formatScore(carriedIn) + " + " + formatScore(here.values[column]) + (getLostPoints(level.episode, level.floor) > 0 ? " - " + formatScore(getLostPoints(level.episode, level.floor)) : ""));
         afterTexts.push(formatScore(afterBonus));
         afterMath.push(formatScore(cleared) + " + " + formatScore(thisFloorBonus));
     }
@@ -3033,6 +3139,7 @@ function fillScoreRows(code, level, here, scenarios, infoByFloor, loadingRow, se
             if (secretLeftOut === true) {
                 noteText = noteText + " The secret floor is not included because the wiki doesn't say which floor leads to it.";
             }
+            noteText = noteText + describeScoreAdjustments(level, scenarios);
             note = document.createElement("tr");
             note.className = "score-row";
             noteCell = document.createElement("td");
